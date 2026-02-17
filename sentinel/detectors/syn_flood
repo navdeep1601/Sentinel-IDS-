@@ -1,0 +1,32 @@
+from collections import defaultdict
+from sentinel.utils import current_time
+from sentinel.detectors.base_detector import BaseDetector
+
+class SYNFloodDetector(BaseDetector):
+    def __init__(self, threshold, time_window, alert_callback):
+        self.threshold = threshold
+        self.time_window = time_window
+        self.alert_callback = alert_callback
+        self.syn_counts = defaultdict(list)
+
+    def process(self, packet):
+        if packet.haslayer("TCP") and packet.haslayer("IP"):
+            tcp = packet["TCP"]
+            if tcp.flags == "S":
+                src = packet["IP"].src
+                now = current_time()
+
+                self.syn_counts[src] = [
+                    ts for ts in self.syn_counts[src]
+                    if now - ts <= self.time_window
+                ]
+
+                self.syn_counts[src].append(now)
+
+                if len(self.syn_counts[src]) >= self.threshold:
+                    self.alert_callback({
+                        "type": "SYN_FLOOD",
+                        "source": src,
+                        "syn_packets": len(self.syn_counts[src])
+                    })
+                    self.syn_counts[src].clear()
